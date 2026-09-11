@@ -1,0 +1,6 @@
+{
+  "incidentId": "INC-001",
+  "metric": "CPUUtilization",
+  "value": 95,
+  "threshold": 80
+}

@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Self-Healing-Infra
+
+  Sample SAM Template for Self-Healing-Infra
+
+Globals:
+  Function:
+    Timeout: 3
+    LoggingConfig:
+      LogFormat: JSON
+
+Resources:
+
+  DiagnoseWithBedrockFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/zaman/diagnose-with-bedrock/
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Architectures:
+        - x86_64
+      Timeout: 30
+
+  ApplyFixFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/jyotish/apply-fix/
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Architectures:
+        - x86_64
+      Timeout: 30
+
+  AskAboutIncidentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/jyotish/ask-about-incidents/
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Architectures:
+        - x86_64
+      Timeout: 30
+
+  IncidentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SelfHealingIncidents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: incidentId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: incidentId
+          KeyType: HASH
+
+    SelfHealingTestAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: SelfHealing-Test-Alarm
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DiagnoseWithBedrockFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  SelfHealingOrchestrator:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: Self-Healing-Orchestrator
+      DefinitionUri: statemachine/orchestrator.asl.json
+      DefinitionSubstitutions:
+        DiagnoseFunctionArn: !GetAtt DiagnoseWithBedrockFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref DiagnoseWithBedrockFunction
