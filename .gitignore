@@ -10,7 +10,7 @@
 
 # KDE directory preferences
 .directory
-
+alarm.json
 # Linux trash folder which might appear on any partition or disk
 .Trash-*
 
@@ -150,7 +150,8 @@ temp/
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*

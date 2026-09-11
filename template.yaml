@@ -56,7 +56,7 @@ Resources:
         - AttributeName: incidentId
           KeyType: HASH
 
-    SelfHealingTestAlarm:
+  SelfHealingTestAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: SelfHealing-Test-Alarm
