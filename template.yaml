@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
+
 Transform: AWS::Serverless-2016-10-31
 
 Description: >
@@ -58,19 +59,45 @@ Resources:
 
   SelfHealingTestAlarm:
     Type: AWS::CloudWatch::Alarm
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       AlarmName: SelfHealing-Test-Alarm
       Namespace: AWS/Lambda
       MetricName: Invocations
       Dimensions:
         - Name: FunctionName
-          Value: !Ref DiagnoseWithBedrockFunction
-      Statistic: Sum
-      Period: 300
+          Value: Self-Healing-Infra-DiagnoseWithBedrockFunction-VRqzzWffBPM1
+      Statistic: Average
+      Period: 60
       EvaluationPeriods: 1
+      DatapointsToAlarm: 1
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: notBreaching
+      TreatMissingData: missing
+
+  SelfHealingTrigger:
+    Type: AWS::Events::Rule
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: SelfHealingTrigger
+      Description: Triggers self-healing workflow when infrastructure metrics breach thresholds
+      EventBusName: default
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.cloudwatch
+        detail-type:
+          - CloudWatch Alarm State Change
+        detail:
+          state:
+            value:
+              - ALARM
+      Targets:
+        - Id: Iddfa1de24-3c4b-4c13-9a04-cdeb9f222556
+          Arn: arn:aws:states:ap-south-1:691588646018:stateMachine:Self-Healing-Orchestrator
+          RoleArn: arn:aws:iam::691588646018:role/service-role/Amazon_EventBridge_Invoke_Step_Functions_1487815626
 
   SelfHealingOrchestrator:
     Type: AWS::Serverless::StateMachine
@@ -82,3 +109,9 @@ Resources:
       Policies:
         - LambdaInvokePolicy:
             FunctionName: !Ref DiagnoseWithBedrockFunction
+
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt IncidentsTable.Arn
