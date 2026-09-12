@@ -1,7 +1,23 @@
 {
-  "Comment": "A description of my state machine",
-  "StartAt": "Lambda Invoke",
+  "Comment": "Self-Healing Infrastructure Orchestrator",
+  "StartAt": "Prepare Incident",
   "States": {
+    "Prepare Incident": {
+      "Type": "Pass",
+      "Parameters": {
+        "incidentId.$": "$.id",
+        "alarmName.$": "$.detail.alarmName",
+        "alarmState.$": "$.detail.state.value",
+        "alarmReason.$": "$.detail.state.reason",
+        "resourceArn.$": "$.resources[0]",
+        "source.$": "$.source",
+        "account.$": "$.account",
+        "region.$": "$.region",
+        "eventTime.$": "$.time"
+      },
+      "Next": "Lambda Invoke"
+    },
+
     "Lambda Invoke": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -26,16 +42,17 @@
       ],
       "Next": "DynamoDB PutItem"
     },
+
     "DynamoDB PutItem": {
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:putItem",
       "Parameters": {
         "TableName": "SelfHealingIncidents",
         "Item": {
-        "incidentId": {
-        "S.$": "$.id"
-}
-}
+          "incidentId": {
+            "S.$": "$.incidentId"
+          }
+        }
       },
       "End": true
     }

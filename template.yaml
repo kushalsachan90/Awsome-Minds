@@ -5,7 +5,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   Self-Healing-Infra
 
-  Sample SAM Template for Self-Healing-Infra
+  SAM Template for Self-Healing Infrastructure Agent
 
 Globals:
   Function:
@@ -14,6 +14,47 @@ Globals:
       LogFormat: JSON
 
 Resources:
+
+  # ============================================================
+  # 1. FAILURE SOURCE
+  # ============================================================
+
+  SelfHealingFaultyLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/kushal/faulty-lambda/
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Architectures:
+        - x86_64
+      Timeout: 10
+
+
+  # ============================================================
+  # 2. FAILURE DETECTION - CLOUDWATCH ALARM
+  # ============================================================
+
+  SelfHealingFaultyLambdaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: SelfHealing-FaultyLambda-Alarm
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SelfHealingFaultyLambda
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+
+  # ============================================================
+  # 3. DIAGNOSIS - ZAMAN
+  # ============================================================
 
   DiagnoseWithBedrockFunction:
     Type: AWS::Serverless::Function
@@ -25,6 +66,11 @@ Resources:
         - x86_64
       Timeout: 30
 
+
+  # ============================================================
+  # 4. FIX - JYOTISH
+  # ============================================================
+
   ApplyFixFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -35,6 +81,11 @@ Resources:
         - x86_64
       Timeout: 30
 
+
+  # ============================================================
+  # 5. INCIDENT CHAT - JYOTISH
+  # ============================================================
+
   AskAboutIncidentsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -44,6 +95,11 @@ Resources:
       Architectures:
         - x86_64
       Timeout: 30
+
+
+  # ============================================================
+  # 6. INCIDENT DATA
+  # ============================================================
 
   IncidentsTable:
     Type: AWS::DynamoDB::Table
@@ -57,24 +113,15 @@ Resources:
         - AttributeName: incidentId
           KeyType: HASH
 
-  SelfHealingTestAlarm:
-    Type: AWS::CloudWatch::Alarm
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      AlarmName: SelfHealing-Test-Alarm
-      Namespace: AWS/Lambda
-      MetricName: Invocations
-      Dimensions:
-        - Name: FunctionName
-          Value: Self-Healing-Infra-DiagnoseWithBedrockFunction-VRqzzWffBPM1
-      Statistic: Average
-      Period: 60
-      EvaluationPeriods: 1
-      DatapointsToAlarm: 1
-      Threshold: 0
-      ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: missing
+
+
+
+  
+
+
+  # ============================================================
+  # 8. EVENTBRIDGE
+  # ============================================================
 
   SelfHealingTrigger:
     Type: AWS::Events::Rule
@@ -85,31 +132,47 @@ Resources:
       Description: Triggers self-healing workflow when infrastructure metrics breach thresholds
       EventBusName: default
       State: ENABLED
+
       EventPattern:
         source:
           - aws.cloudwatch
+
         detail-type:
           - CloudWatch Alarm State Change
+
         detail:
           state:
             value:
               - ALARM
+
       Targets:
         - Id: Iddfa1de24-3c4b-4c13-9a04-cdeb9f222556
           Arn: arn:aws:states:ap-south-1:691588646018:stateMachine:Self-Healing-Orchestrator
           RoleArn: arn:aws:iam::691588646018:role/service-role/Amazon_EventBridge_Invoke_Step_Functions_1487815626
 
+
+  # ============================================================
+  # 9. STEP FUNCTIONS ORCHESTRATOR
+  # ============================================================
+
   SelfHealingOrchestrator:
     Type: AWS::Serverless::StateMachine
+
     Properties:
       Name: Self-Healing-Orchestrator
+
       DefinitionUri: statemachine/orchestrator.asl.json
+
       DefinitionSubstitutions:
         DiagnoseFunctionArn: !GetAtt DiagnoseWithBedrockFunction.Arn
+
       Policies:
+
+        # Step Functions → Diagnose Lambda
         - LambdaInvokePolicy:
             FunctionName: !Ref DiagnoseWithBedrockFunction
 
+        # Step Functions → DynamoDB
         - Statement:
             - Effect: Allow
               Action:
