@@ -1,0 +1,17 @@
+{
+  "incidentId": "manual-test-rollback-v6",
+  "resourceType": "Lambda",
+  "resourceArn": "arn:aws:lambda:ap-south-1:691588646018:function:Self-Healing-Infra-SelfHealingFaultyLambda-pyYgEP7IpcxC",
+  "approval": {
+    "approved": true,
+    "approvedBy": "manual-test",
+    "approvedAt": "2026-09-13T00:00:00Z"
+  },
+  "fix": {
+    "action": "ROLLBACK_VERSION",
+    "parameters": {
+      "targetVersion": "$LATEST_STABLE",
+      "aliasName": "live"
+    }
+  }
+}

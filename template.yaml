@@ -41,9 +41,11 @@ Resources:
       AlarmName: SelfHealing-FaultyLambda-Alarm
       Namespace: AWS/Lambda
       MetricName: Errors
+
       Dimensions:
         - Name: FunctionName
           Value: !Ref SelfHealingFaultyLambda
+
       Statistic: Sum
       Period: 60
       EvaluationPeriods: 1
@@ -113,7 +115,39 @@ Resources:
 
 
   # ============================================================
-  # 6. INCIDENT DATA
+  # 6. HUMAN APPROVAL HANDLER
+  # ============================================================
+
+  ApprovalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/kushal/approval-handler/
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Architectures:
+        - x86_64
+      Timeout: 30
+
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+
+            # Approval Handler → DynamoDB
+            - Effect: Allow
+              Action:
+                - dynamodb:UpdateItem
+              Resource: !GetAtt IncidentsTable.Arn
+
+            # Approval Handler → Step Functions
+            - Effect: Allow
+              Action:
+                - states:SendTaskSuccess
+                - states:SendTaskFailure
+              Resource: "*"
+
+
+  # ============================================================
+  # 7. INCIDENT DATA
   # ============================================================
 
   IncidentsTable:
@@ -137,12 +171,17 @@ Resources:
 
   SelfHealingTrigger:
     Type: AWS::Events::Rule
+
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
 
     Properties:
       Name: SelfHealingTrigger
-      Description: Triggers self-healing workflow when infrastructure metrics breach thresholds
+
+      Description: >
+        Triggers self-healing workflow when infrastructure
+        metrics breach thresholds
+
       EventBusName: default
       State: ENABLED
 
@@ -160,7 +199,9 @@ Resources:
 
       Targets:
         - Id: Iddfa1de24-3c4b-4c13-9a04-cdeb9f222556
+
           Arn: arn:aws:states:ap-south-1:691588646018:stateMachine:Self-Healing-Orchestrator
+
           RoleArn: arn:aws:iam::691588646018:role/service-role/Amazon_EventBridge_Invoke_Step_Functions_1487815626
 
 
@@ -176,6 +217,10 @@ Resources:
 
       DefinitionUri: statemachine/orchestrator.asl.json
 
+      # --------------------------------------------------------
+      # Values injected into orchestrator.asl.json
+      # --------------------------------------------------------
+
       DefinitionSubstitutions:
 
         # Step Functions → Diagnose Lambda
@@ -184,11 +229,29 @@ Resources:
         # Step Functions → Actual faulty Lambda
         FaultyLambdaArn: !GetAtt SelfHealingFaultyLambda.Arn
 
+        # Step Functions → Human Approval Lambda
+        ApprovalFunctionArn: !GetAtt ApprovalFunction.Arn
+
+        # Step Functions → Apply Fix Lambda
+        ApplyFixFunctionArn: !GetAtt ApplyFixFunction.Arn
+
+      # --------------------------------------------------------
+      # Step Functions IAM permissions
+      # --------------------------------------------------------
+
       Policies:
 
         # Step Functions → Diagnose Lambda
         - LambdaInvokePolicy:
             FunctionName: !Ref DiagnoseWithBedrockFunction
+
+        # Step Functions → Approval Lambda
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ApprovalFunction
+
+        # Step Functions → Apply Fix Lambda
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ApplyFixFunction
 
         # Step Functions → DynamoDB
         - Statement:

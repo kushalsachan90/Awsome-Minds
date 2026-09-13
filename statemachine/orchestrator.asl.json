@@ -47,9 +47,7 @@
       ],
 
       "ResultPath": "$",
-
       "OutputPath": "$.Payload",
-
       "Next": "DynamoDB PutItem"
     },
 
@@ -68,7 +66,77 @@
 
       "ResultPath": null,
 
-      "End": true
+      "Next": "Wait for Approval"
+    },
+
+    "Wait for Approval": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+
+      "Parameters": {
+        "FunctionName": "${ApprovalFunctionArn}",
+        "Payload": {
+          "taskToken.$": "$$.Task.Token",
+          "incident.$": "$"
+        }
+      },
+
+      "ResultPath": "$.approval",
+
+      "Next": "Check Approval"
+    },
+
+    "Check Approval": {
+      "Type": "Choice",
+
+      "Choices": [
+        {
+          "Variable": "$.approval.approved",
+          "BooleanEquals": true,
+          "Next": "Apply Fix"
+        }
+      ],
+
+      "Default": "Approval Rejected"
+    },
+
+    "Apply Fix": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+
+      "Parameters": {
+        "FunctionName": "${ApplyFixFunctionArn}",
+        "Payload.$": "$"
+      },
+
+      "ResultPath": "$.fixResult",
+
+      "OutputPath": "$",
+
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+
+      "Next": "Fix Completed"
+    },
+
+    "Fix Completed": {
+      "Type": "Succeed"
+    },
+
+    "Approval Rejected": {
+      "Type": "Succeed"
     }
   },
 
