@@ -10,7 +10,7 @@
         "alarmName.$": "$.detail.alarmName",
         "alarmState.$": "$.detail.state.value",
         "alarmReason.$": "$.detail.state.reason",
-        "resourceArn.$": "$.resources[0]",
+        "resourceArn": "${FaultyLambdaArn}",
         "source.$": "$.source",
         "account.$": "$.account",
         "region.$": "$.region",

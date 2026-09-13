@@ -28,6 +28,7 @@ Resources:
       Architectures:
         - x86_64
       Timeout: 10
+      AutoPublishAlias: live
 
 
   # ============================================================
@@ -80,15 +81,18 @@ Resources:
       Architectures:
         - x86_64
       Timeout: 30
+
       Policies:
         - Version: "2012-10-17"
           Statement:
             - Effect: Allow
               Action:
                 - lambda:GetAlias
+                - lambda:ListVersionsByFunction
                 - lambda:UpdateAlias
                 - lambda:UpdateFunctionConfiguration
                 - lambda:PutFunctionConcurrency
+                - lambda:DeleteFunctionConcurrency
                 - lambda:GetFunctionConfiguration
               Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*"
 
@@ -117,17 +121,14 @@ Resources:
     Properties:
       TableName: SelfHealingIncidents
       BillingMode: PAY_PER_REQUEST
+
       AttributeDefinitions:
         - AttributeName: incidentId
           AttributeType: S
+
       KeySchema:
         - AttributeName: incidentId
           KeyType: HASH
-
-
-
-
-  
 
 
   # ============================================================
@@ -138,6 +139,7 @@ Resources:
     Type: AWS::Events::Rule
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
+
     Properties:
       Name: SelfHealingTrigger
       Description: Triggers self-healing workflow when infrastructure metrics breach thresholds
@@ -175,7 +177,12 @@ Resources:
       DefinitionUri: statemachine/orchestrator.asl.json
 
       DefinitionSubstitutions:
+
+        # Step Functions → Diagnose Lambda
         DiagnoseFunctionArn: !GetAtt DiagnoseWithBedrockFunction.Arn
+
+        # Step Functions → Actual faulty Lambda
+        FaultyLambdaArn: !GetAtt SelfHealingFaultyLambda.Arn
 
       Policies:
 
