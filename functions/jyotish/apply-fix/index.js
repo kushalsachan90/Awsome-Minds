@@ -1,3 +1,5 @@
+import { handleLambdaFix } from "./lambdaFix.js";
+
 export const handler = async (event) => {
 
     console.log(
@@ -5,7 +7,7 @@ export const handler = async (event) => {
         JSON.stringify(event)
     );
 
-    // human approval
+    // 1. Human approval
     if (!event.approval?.approved) {
         return {
             success: false,
@@ -16,23 +18,33 @@ export const handler = async (event) => {
         };
     }
 
-    const {recommendedAction} = event;
+    // 2. Extract fix
+    const { action, parameters } = event.fix || {};
+    const { resourceType } = event;
 
-    //  supported action and call aws api for fix
-    switch (recommendedAction) {
+    if (!action) {
+        throw new Error("Missing fix action");
+    }
 
-        case "ROLLBACK_LAMBDA_VERSION":
-            return await rollbackLambda(event);
+    if (!resourceType) {
+        throw new Error("Missing resource type");
+    }
 
-        case "UPDATE_LAMBDA_MEMORY":
-            return await updateLambdaMemory(event);
+    // 3. Dispatch
+    switch (resourceType) {
 
-        case "RESTART_EC2":
-            return await restartEC2(event);
+        case "Lambda":
+            return await handleLambdaFix(event);
+
+        case "EC2":
+            return await handleEC2Fix(event);
+
+        case "DynamoDB":
+            return await handleDynamoDBFix(event);
 
         default:
             throw new Error(
-                `Unsupported action: ${recommendedAction}`
+                `Unsupported resource type: ${resourceType}`
             );
     }
 };
