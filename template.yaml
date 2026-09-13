@@ -80,6 +80,17 @@ Resources:
       Architectures:
         - x86_64
       Timeout: 30
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:GetAlias
+                - lambda:UpdateAlias
+                - lambda:UpdateFunctionConfiguration
+                - lambda:PutFunctionConcurrency
+                - lambda:GetFunctionConfiguration
+              Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*"
 
 
   # ============================================================
