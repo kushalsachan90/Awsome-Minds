@@ -6,6 +6,7 @@
       "Type": "Pass",
       "Parameters": {
         "incidentId.$": "$.id",
+        "resourceType": "Lambda",
         "alarmName.$": "$.detail.alarmName",
         "alarmState.$": "$.detail.state.value",
         "alarmReason.$": "$.detail.state.reason",
@@ -13,7 +14,10 @@
         "source.$": "$.source",
         "account.$": "$.account",
         "region.$": "$.region",
-        "eventTime.$": "$.time"
+        "eventTime.$": "$.time",
+        "metric": "Errors",
+        "value": 1,
+        "threshold": 0
       },
       "Next": "Lambda Invoke"
     },
@@ -21,11 +25,12 @@
     "Lambda Invoke": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
-      "ResultPath": "$.diagnosis",
+
       "Parameters": {
         "Payload.$": "$",
         "FunctionName": "${DiagnoseFunctionArn}"
       },
+
       "Retry": [
         {
           "ErrorEquals": [
@@ -40,12 +45,18 @@
           "JitterStrategy": "FULL"
         }
       ],
+
+      "ResultPath": "$",
+
+      "OutputPath": "$.Payload",
+
       "Next": "DynamoDB PutItem"
     },
 
     "DynamoDB PutItem": {
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:putItem",
+
       "Parameters": {
         "TableName": "SelfHealingIncidents",
         "Item": {
@@ -54,8 +65,12 @@
           }
         }
       },
+
+      "ResultPath": null,
+
       "End": true
     }
   },
+
   "QueryLanguage": "JSONPath"
 }

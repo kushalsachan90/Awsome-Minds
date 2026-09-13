@@ -11,6 +11,8 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.1129.0"
+    "@aws-sdk/client-bedrock-runtime": "^3.1129.0",
+    "dotenv": "^17.4.2",
+    "openai": "^7.15.0"
   }
 }
