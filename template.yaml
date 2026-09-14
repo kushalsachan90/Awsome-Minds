@@ -258,4 +258,5 @@ Resources:
             - Effect: Allow
               Action:
                 - dynamodb:PutItem
+                - dynamodb:UpdateItem
               Resource: !GetAtt IncidentsTable.Arn

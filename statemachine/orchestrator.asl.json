@@ -25,12 +25,10 @@
     "Lambda Invoke": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
-
       "Parameters": {
         "Payload.$": "$",
         "FunctionName": "${DiagnoseFunctionArn}"
       },
-
       "Retry": [
         {
           "ErrorEquals": [
@@ -45,7 +43,6 @@
           "JitterStrategy": "FULL"
         }
       ],
-
       "ResultPath": "$",
       "OutputPath": "$.Payload",
       "Next": "DynamoDB PutItem"
@@ -54,25 +51,57 @@
     "DynamoDB PutItem": {
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:putItem",
-
       "Parameters": {
         "TableName": "SelfHealingIncidents",
         "Item": {
           "incidentId": {
             "S.$": "$.incidentId"
+          },
+          "resourceType": {
+            "S.$": "$.resourceType"
+          },
+          "resourceArn": {
+            "S.$": "$.resourceArn"
+          },
+          "rootCause": {
+            "S.$": "$.rootCause"
+          },
+          "severity": {
+            "S.$": "$.severity"
+          },
+          "reason": {
+            "S.$": "$.reason"
+          },
+          "confidence": {
+            "N.$": "States.Format('{}', $.confidence)"
+          },
+          "confidenceReason": {
+            "S.$": "$.confidenceReason"
+          },
+          "blastRadius": {
+            "S.$": "$.blastRadius"
+          },
+          "blastRadiusReason": {
+            "S.$": "$.blastRadiusReason"
+          },
+          "estimatedCostImpact": {
+            "S.$": "$.estimatedCostImpact"
+          },
+          "fixAction": {
+            "S.$": "$.fix.action"
+          },
+          "fixParameters": {
+            "S.$": "States.JsonToString($.fix.parameters)"
           }
         }
       },
-
       "ResultPath": null,
-
       "Next": "Wait for Approval"
     },
 
     "Wait for Approval": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
-
       "Parameters": {
         "FunctionName": "${ApprovalFunctionArn}",
         "Payload": {
@@ -80,15 +109,12 @@
           "incident.$": "$"
         }
       },
-
       "ResultPath": "$.approval",
-
       "Next": "Check Approval"
     },
 
     "Check Approval": {
       "Type": "Choice",
-
       "Choices": [
         {
           "Variable": "$.approval.approved",
@@ -96,23 +122,18 @@
           "Next": "Apply Fix"
         }
       ],
-
       "Default": "Approval Rejected"
     },
 
     "Apply Fix": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
-
       "Parameters": {
         "FunctionName": "${ApplyFixFunctionArn}",
         "Payload.$": "$"
       },
-
       "ResultPath": "$.fixResult",
-
       "OutputPath": "$",
-
       "Retry": [
         {
           "ErrorEquals": [
@@ -127,7 +148,39 @@
           "JitterStrategy": "FULL"
         }
       ],
+      "Next": "DynamoDB UpdateItem"
+    },
 
+    "DynamoDB UpdateItem": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "SelfHealingIncidents",
+        "Key": {
+          "incidentId": {
+            "S.$": "$.incidentId"
+          }
+        },
+        "UpdateExpression": "SET approvalStatus = :approved, approvedBy = :approvedBy, approvedAt = :approvedAt, fixStatus = :fixStatus, fixResult = :fixResult",
+        "ExpressionAttributeValues": {
+          ":approved": {
+            "S": "APPROVED"
+          },
+          ":approvedBy": {
+            "S.$": "$.approval.approvedBy"
+          },
+          ":approvedAt": {
+            "S.$": "$.approval.approvedAt"
+          },
+          ":fixStatus": {
+            "S": "COMPLETED"
+          },
+          ":fixResult": {
+            "S.$": "States.JsonToString($.fixResult.Payload)"
+          }
+        }
+      },
+      "ResultPath": null,
       "Next": "Fix Completed"
     },
 
@@ -136,6 +189,30 @@
     },
 
     "Approval Rejected": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "SelfHealingIncidents",
+        "Key": {
+          "incidentId": {
+            "S.$": "$.incidentId"
+          }
+        },
+        "UpdateExpression": "SET approvalStatus = :rejected, fixStatus = :notApplied",
+        "ExpressionAttributeValues": {
+          ":rejected": {
+            "S": "REJECTED"
+          },
+          ":notApplied": {
+            "S": "NOT_APPLIED"
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Approval Rejected Completed"
+    },
+
+    "Approval Rejected Completed": {
       "Type": "Succeed"
     }
   },
