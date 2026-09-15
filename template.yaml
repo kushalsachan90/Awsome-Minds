@@ -84,103 +84,103 @@ Resources:
         - x86_64
       Timeout: 30
 
-Policies:
-  - Version: "2012-10-17"
-    Statement:
+    Policies:
+      - Version: "2012-10-17"
+        Statement:
 
-      # --- Lambda fix actions ---
-      - Effect: Allow
-        Action:
-          - lambda:GetAlias
-          - lambda:ListVersionsByFunction
-          - lambda:UpdateAlias
-          - lambda:UpdateFunctionConfiguration
-          - lambda:PutFunctionConcurrency
-          - lambda:DeleteFunctionConcurrency
-          - lambda:GetFunctionConfiguration
-        Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*"
-
-
-      # --- EC2 read-only ---
-      - Effect: Allow
-        Action:
-          - ec2:DescribeInstances
-        Resource: "*"
+          # --- Lambda fix actions ---
+          - Effect: Allow
+            Action:
+              - lambda:GetAlias
+              - lambda:ListVersionsByFunction
+              - lambda:UpdateAlias
+              - lambda:UpdateFunctionConfiguration
+              - lambda:PutFunctionConcurrency
+              - lambda:DeleteFunctionConcurrency
+              - lambda:GetFunctionConfiguration
+            Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*"
 
 
-      # --- EC2 reboot / stop / start / resize ---
-      - Effect: Allow
-        Action:
-          - ec2:RebootInstances
-          - ec2:StopInstances
-          - ec2:StartInstances
-          - ec2:ModifyInstanceAttribute
-        Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
-        Condition:
-          StringEquals:
-            "aws:ResourceTag/SelfHealing:Managed": "true"
+          # --- EC2 read-only ---
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+            Resource: "*"
 
 
-      # --- EC2 rollback AMI: launch replacement ---
-      - Effect: Allow
-        Action:
-          - ec2:RunInstances
-        Resource:
-          - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
-          - !Sub "arn:aws:ec2:${AWS::Region}::image/*"
-          - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
-          - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
-          - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/*"
+          # --- EC2 reboot / stop / start / resize ---
+          - Effect: Allow
+            Action:
+              - ec2:RebootInstances
+              - ec2:StopInstances
+              - ec2:StartInstances
+              - ec2:ModifyInstanceAttribute
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals:
+                "aws:ResourceTag/SelfHealing:Managed": "true"
 
 
-      # --- EC2 rollback AMI: subnet / security group ---
-      - Effect: Allow
-        Action:
-          - ec2:RunInstances
-        Resource:
-          - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/*"
-          - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
-        Condition:
-          StringEquals:
-            "ec2:Vpc": !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${TargetVpcId}"
+          # --- EC2 rollback AMI: launch replacement ---
+          - Effect: Allow
+            Action:
+              - ec2:RunInstances
+            Resource:
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}::image/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/*"
 
 
-      # --- EC2 replacement: tag after launch ---
-      - Effect: Allow
-        Action:
-          - ec2:CreateTags
-        Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+          # --- EC2 rollback AMI: subnet / security group ---
+          - Effect: Allow
+            Action:
+              - ec2:RunInstances
+            Resource:
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+            Condition:
+              StringEquals:
+                "ec2:Vpc": !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${TargetVpcId}"
 
 
-      # --- EC2: pass instance role ---
-      - Effect: Allow
-        Action:
-          - iam:PassRole
-        Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${TargetInstanceRoleName}"
-        Condition:
-          StringEquals:
-            "iam:PassedToService": "ec2.amazonaws.com"
+          # --- EC2 replacement: tag after launch ---
+          - Effect: Allow
+            Action:
+              - ec2:CreateTags
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
 
 
-      # --- DynamoDB fix actions ---
-      - Effect: Allow
-        Action:
-          - dynamodb:DescribeTable
-          - dynamodb:DescribeContinuousBackups
-          - dynamodb:UpdateTable
-          - dynamodb:UpdateContinuousBackups
-          - dynamodb:RestoreTableToPointInTime
-          - dynamodb:DeleteItem
-        Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*"
-        Condition:
-          StringEquals:
-            "aws:ResourceTag/SelfHealing:Managed": "true"
+          # --- EC2: pass instance role ---
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${TargetInstanceRoleName}"
+            Condition:
+              StringEquals:
+                "iam:PassedToService": "ec2.amazonaws.com"
+
+
+          # --- DynamoDB fix actions ---
+          - Effect: Allow
+            Action:
+              - dynamodb:DescribeTable
+              - dynamodb:DescribeContinuousBackups
+              - dynamodb:UpdateTable
+              - dynamodb:UpdateContinuousBackups
+              - dynamodb:RestoreTableToPointInTime
+              - dynamodb:DeleteItem
+            Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*"
+            Condition:
+              StringEquals:
+                "aws:ResourceTag/SelfHealing:Managed": "true"
 
   # ============================================================
   # 5. INCIDENT CHAT - JYOTISH
   # ============================================================
 
-AskAboutIncidentsFunction:
+  AskAboutIncidentsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/jyotish/ask-about-incidents/
@@ -195,7 +195,7 @@ AskAboutIncidentsFunction:
   # 6. HUMAN APPROVAL HANDLER
   # ============================================================
 
-ApprovalFunction:
+  ApprovalFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/kushal/approval-handler/
@@ -227,7 +227,7 @@ ApprovalFunction:
   # 7. INCIDENT DATA
   # ============================================================
 
-IncidentsTable:
+  IncidentsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: SelfHealingIncidents
@@ -246,7 +246,7 @@ IncidentsTable:
   # 8. EVENTBRIDGE
   # ============================================================
 
-SelfHealingTrigger:
+  SelfHealingTrigger:
     Type: AWS::Events::Rule
 
     DeletionPolicy: Retain
@@ -286,7 +286,7 @@ SelfHealingTrigger:
   # 9. STEP FUNCTIONS ORCHESTRATOR
   # ============================================================
 
-SelfHealingOrchestrator:
+  SelfHealingOrchestrator:
     Type: AWS::Serverless::StateMachine
 
     Properties:
