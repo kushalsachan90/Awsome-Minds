@@ -1,0 +1,1 @@
+{"name":"self-healing-cognito-authorizer","version":"1.0.0","private":true,"engines":{"node":">=20 <25"},"dependencies":{"aws-jwt-verify":"^5.1.1"}}
