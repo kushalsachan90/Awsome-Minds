@@ -63,6 +63,20 @@
           "resourceArn": {
             "S.$": "$.resourceArn"
           },
+
+          "metric": {
+            "S.$": "$.metric"
+          },
+          "metricValue": {
+            "N.$": "States.Format('{}', $.value)"
+          },
+          "threshold": {
+            "N.$": "States.Format('{}', $.threshold)"
+          },
+          "diagnosedAt": {
+            "S.$": "$$.State.EnteredTime"
+          },
+
           "rootCause": {
             "S.$": "$.rootCause"
           },
@@ -110,6 +124,15 @@
         }
       },
       "ResultPath": "$.approval",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "RejectedByOperator"
+          ],
+          "ResultPath": "$.approval",
+          "Next": "Approval Rejected"
+        }
+      ],
       "Next": "Check Approval"
     },
 
@@ -216,6 +239,5 @@
       "Type": "Succeed"
     }
   },
-
   "QueryLanguage": "JSONPath"
 }

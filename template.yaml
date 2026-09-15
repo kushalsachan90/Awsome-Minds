@@ -217,10 +217,6 @@ Resources:
 
       DefinitionUri: statemachine/orchestrator.asl.json
 
-      # --------------------------------------------------------
-      # Values injected into orchestrator.asl.json
-      # --------------------------------------------------------
-
       DefinitionSubstitutions:
 
         # Step Functions → Diagnose Lambda
@@ -234,10 +230,6 @@ Resources:
 
         # Step Functions → Apply Fix Lambda
         ApplyFixFunctionArn: !GetAtt ApplyFixFunction.Arn
-
-      # --------------------------------------------------------
-      # Step Functions IAM permissions
-      # --------------------------------------------------------
 
       Policies:
 
@@ -260,3 +252,336 @@ Resources:
                 - dynamodb:PutItem
                 - dynamodb:UpdateItem
               Resource: !GetAtt IncidentsTable.Arn
+
+
+  # ============================================================
+  # 10. AUTHENTICATION - COGNITO USER POOL
+  # ============================================================
+
+  SelfHealingUserPool:
+    Type: AWS::Cognito::UserPool
+
+    Properties:
+      UserPoolName: SelfHealingOperators
+
+      AutoVerifiedAttributes:
+        - email
+
+      UsernameAttributes:
+        - email
+
+
+  # ============================================================
+  # 11. COGNITO SPA APP CLIENT
+  # ============================================================
+
+  SelfHealingUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+
+    Properties:
+      UserPoolId: !Ref SelfHealingUserPool
+
+      ClientName: SelfHealingDashboardSPA
+
+      GenerateSecret: false
+
+      AllowedOAuthFlows:
+        - code
+
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+
+      AllowedOAuthFlowsUserPoolClient: true
+
+      CallbackURLs:
+        - http://localhost:5173/
+
+      LogoutURLs:
+        - http://localhost:5173/
+
+
+  # ============================================================
+  # 12. COGNITO HOSTED UI DOMAIN
+  # ============================================================
+
+  SelfHealingCognitoDomain:
+    Type: AWS::Cognito::UserPoolDomain
+
+    Properties:
+      UserPoolId: !Ref SelfHealingUserPool
+
+      Domain: !Sub "self-healing-${AWS::AccountId}"
+
+
+  # ============================================================
+  # 13. FRONTEND APPROVAL API LAMBDA
+  # ============================================================
+
+  ApprovalApiFunction:
+    Type: AWS::Serverless::Function
+
+    Properties:
+      CodeUri: self-healing-azizul/self-healing-azizul/functions/azizul/approval-api/
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Architectures:
+        - x86_64
+      Timeout: 30
+
+      Environment:
+        Variables:
+          INCIDENT_TABLE: !Ref IncidentsTable
+          ALLOW_ORIGIN: http://localhost:5173
+
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+
+            # Approval API → DynamoDB
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource: !GetAtt IncidentsTable.Arn
+
+            # Approval API → Step Functions
+            - Effect: Allow
+              Action:
+                - states:SendTaskSuccess
+                - states:SendTaskFailure
+              Resource: "*"
+
+
+  # ============================================================
+  # 14. HTTP API GATEWAY
+  # ============================================================
+
+  SelfHealingHttpApi:
+    Type: AWS::Serverless::HttpApi
+
+    Properties:
+      StageName: $default
+
+      CorsConfiguration:
+        AllowOrigins:
+          - http://localhost:5173
+
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+
+      DefinitionBody:
+
+        openapi: 3.0.1
+
+        info:
+          title: Self-Healing Infrastructure API
+          version: "1.0"
+
+        paths:
+
+          # ------------------------------------------------------
+          # GET /incidents
+          # ------------------------------------------------------
+
+          /incidents:
+            get:
+              security:
+                - CognitoAuthorizer: []
+
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                payloadFormatVersion: "2.0"
+                uri:
+                  Fn::Sub: >-
+                    arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApprovalApiFunction.Arn}/invocations
+
+
+          # ------------------------------------------------------
+          # GET /incidents/{id}
+          # ------------------------------------------------------
+
+          /incidents/{id}:
+            get:
+              security:
+                - CognitoAuthorizer: []
+
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                payloadFormatVersion: "2.0"
+                uri:
+                  Fn::Sub: >-
+                    arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApprovalApiFunction.Arn}/invocations
+
+
+          # ------------------------------------------------------
+          # POST /incidents/{id}/approve
+          # ------------------------------------------------------
+
+          /incidents/{id}/approve:
+            post:
+              security:
+                - CognitoAuthorizer: []
+
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                payloadFormatVersion: "2.0"
+                uri:
+                  Fn::Sub: >-
+                    arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApprovalApiFunction.Arn}/invocations
+
+
+          # ------------------------------------------------------
+          # POST /incidents/{id}/reject
+          # ------------------------------------------------------
+
+          /incidents/{id}/reject:
+            post:
+              security:
+                - CognitoAuthorizer: []
+
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                payloadFormatVersion: "2.0"
+                uri:
+                  Fn::Sub: >-
+                    arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApprovalApiFunction.Arn}/invocations
+
+
+          # ------------------------------------------------------
+          # POST /ask
+          # ------------------------------------------------------
+
+          /ask:
+            post:
+              security:
+                - CognitoAuthorizer: []
+
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                payloadFormatVersion: "2.0"
+                uri:
+                  Fn::Sub: >-
+                    arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AskAboutIncidentsFunction.Arn}/invocations
+
+
+        # --------------------------------------------------------
+        # Cognito JWT Authorizer
+        # --------------------------------------------------------
+
+        components:
+
+          securitySchemes:
+
+            CognitoAuthorizer:
+
+              type: openIdConnect
+
+              openIdConnectUrl: !Sub >-
+                https://cognito-idp.${AWS::Region}.amazonaws.com/${SelfHealingUserPool}/.well-known/openid-configuration
+
+              x-amazon-apigateway-authorizer:
+
+                type: jwt
+
+                identitySource: "$request.header.Authorization"
+
+                jwtConfiguration:
+
+                  issuer: !Sub >-
+                    https://cognito-idp.${AWS::Region}.amazonaws.com/${SelfHealingUserPool}
+
+                  audience:
+                    - !Ref SelfHealingUserPoolClient
+
+
+  # ============================================================
+  # 15. LAMBDA PERMISSIONS FOR API GATEWAY
+  # ============================================================
+
+  ApprovalApiPermission:
+    Type: AWS::Lambda::Permission
+
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ApprovalApiFunction
+      Principal: apigateway.amazonaws.com
+
+      SourceArn: !Sub >-
+        arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${SelfHealingHttpApi}/*/*
+
+
+  AskAboutIncidentsApiPermission:
+    Type: AWS::Lambda::Permission
+
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AskAboutIncidentsFunction
+      Principal: apigateway.amazonaws.com
+
+      SourceArn: !Sub >-
+        arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${SelfHealingHttpApi}/*/*
+
+
+# ==============================================================
+# OUTPUTS
+# ==============================================================
+
+Outputs:
+
+  # ------------------------------------------------------------
+  # API Gateway URL
+  # ------------------------------------------------------------
+
+  ApiUrl:
+    Description: HTTP API Gateway URL
+    Value: !Sub "https://${SelfHealingHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+
+  # ------------------------------------------------------------
+  # Cognito User Pool ID
+  # ------------------------------------------------------------
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref SelfHealingUserPool
+
+
+  # ------------------------------------------------------------
+  # Cognito SPA Client ID
+  # ------------------------------------------------------------
+
+  CognitoClientId:
+    Description: Cognito public SPA client ID
+    Value: !Ref SelfHealingUserPoolClient
+
+
+  # ------------------------------------------------------------
+  # Cognito Hosted UI Domain
+  # ------------------------------------------------------------
+
+  CognitoDomain:
+    Description: Cognito Hosted UI domain
+    Value: !Sub "self-healing-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com"
+
+
+  # ------------------------------------------------------------
+  # Cognito Region
+  # ------------------------------------------------------------
+
+  CognitoRegion:
+    Description: Cognito AWS region
+    Value: !Ref AWS::Region

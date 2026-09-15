@@ -1,18 +1,258 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import IncidentCard from './components/IncidentCard.jsx';
 import DecisionDialog from './components/DecisionDialog.jsx';
 import ChatPanel from './components/ChatPanel.jsx';
-import { approveIncident, askQuestion, getIncidents, rejectIncident } from './services/api.js';
-import { completeSignIn, getSession, isAuthConfigured, signIn, signOut } from './services/auth.js';
+import {
+  approveIncident,
+  askQuestion,
+  getIncidents,
+  rejectIncident
+} from './services/api.js';
+import {
+  completeSignIn,
+  getSession,
+  isAuthConfigured,
+  signIn,
+  signOut
+} from './services/auth.js';
 
-const demo = [{ incidentId: 'DEMO-001', resourceType: 'EC2', resourceId: 'i-demo123', metric: 'CPUUtilization', metricValue: 96, threshold: 80, severity: 'HIGH', rootCause: 'Sustained CPU saturation', reason: 'CPU stayed above 80% for five minutes.', recommendedAction: 'Restart the instance.', confidence: 88, confidenceReason: 'Pattern matches known CPU saturation.', blastRadius: 'MEDIUM', blastRadiusReason: 'One instance has a brief interruption.', estimatedCostImpact: '+$0/month', status: 'AWAITING_APPROVAL', diagnosedAt: new Date().toISOString() }];
+const demo = [
+  {
+    incidentId: 'DEMO-001',
+    resourceType: 'EC2',
+    resourceId: 'i-demo123',
+    metric: 'CPUUtilization',
+    metricValue: 96,
+    threshold: 80,
+    severity: 'HIGH',
+    rootCause: 'Sustained CPU saturation',
+    reason: 'CPU stayed above 80% for five minutes.',
+    recommendedAction: 'Restart the instance.',
+    confidence: 88,
+    confidenceReason: 'Pattern matches known CPU saturation.',
+    blastRadius: 'MEDIUM',
+    blastRadiusReason: 'One instance has a brief interruption.',
+    estimatedCostImpact: '+$0/month',
+    status: 'AWAITING_APPROVAL',
+    diagnosedAt: new Date().toISOString()
+  }
+];
+
 export default function App() {
- const [session, setSession] = useState(getSession()); const [items, setItems] = useState([]); const [query, setQuery] = useState(''); const [status, setStatus] = useState('ALL'); const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [dialog, setDialog] = useState(null);
- const load = useCallback(async () => { setLoading(true); setError(''); try { const result = await getIncidents(); setItems(result.incidents || []); } catch (e) { setError(e.message); setItems(import.meta.env.VITE_API_URL ? [] : demo); } finally { setLoading(false); } }, []);
- useEffect(() => { completeSignIn().then((s) => { if (s) setSession(s); }).catch((e) => setError(e.message)); }, []);
- useEffect(() => { if (session || !isAuthConfigured()) load(); else setLoading(false); }, [session, load]);
- const filtered = useMemo(() => items.filter((i) => (status === 'ALL' || i.status === status) && `${i.incidentId} ${i.resourceId} ${i.severity} ${i.metric}`.toLowerCase().includes(query.toLowerCase())), [items, query, status]);
- const decide = async (reason) => { try { if (!import.meta.env.VITE_API_URL) { setItems((old) => old.map((i) => i.incidentId === dialog.incident.incidentId ? { ...i, status: dialog.type === 'approve' ? 'APPROVED' : 'REJECTED', rejectionReason: reason, approvedBy: 'demo-operator' } : i)); } else if (dialog.type === 'approve') await approveIncident(dialog.incident.incidentId); else await rejectIncident(dialog.incident.incidentId, reason); setDialog(null); if (import.meta.env.VITE_API_URL) await load(); } catch (e) { setError(e.message); } };
- if (isAuthConfigured() && !session) return <main className="auth"><p className="eyebrow">SELF-HEALING INFRASTRUCTURE</p><h1>Human approval, before automatic action.</h1><p>Sign in as an authorized operator to review incidents and approve remediation.</p>{error && <p className="error">{error}</p>}<button className="primary" onClick={() => signIn().catch((e) => setError(e.message))}>Sign in with Cognito</button></main>;
- return <div className="shell"><header><div><b>SELF-HEALING</b><small>INFRASTRUCTURE CONTROL</small></div><div>{session ? <><span>{session.email}</span><button onClick={signOut}>Sign out</button></> : <span>Demo mode</span>}</div></header><main><section className="hero"><div><p className="eyebrow">INCIDENT OPERATIONS</p><h1>Review, understand, then authorize.</h1><p>Every remediation is human-approved and every rejected decision improves future diagnosis.</p></div><button onClick={load}>Refresh</button></section>{!import.meta.env.VITE_API_URL && <p className="notice">Demo data is shown. Configure the API and Cognito values before deployment.</p>}{error && <p className="error">{error}</p>}<section className="toolbar"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search incidents"/><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="ALL">All statuses</option><option value="AWAITING_APPROVAL">Awaiting approval</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option><option value="FIXED">Fixed</option></select></section><h2>{filtered.length} incident{filtered.length === 1 ? '' : 's'}</h2>{loading ? <p>Loading incidents...</p> : <div className="list">{filtered.map((i) => <IncidentCard key={i.incidentId} incident={i} onDecision={(incident, type) => setDialog({ incident, type })}/>)}</div>}<ChatPanel enabled={Boolean(import.meta.env.VITE_API_URL && session)} onAsk={askQuestion}/></main>{dialog && <DecisionDialog {...dialog} onClose={() => setDialog(null)} onConfirm={decide}/>}</div>;
+  const [session, setSession] = useState(getSession());
+  const [items, setItems] = useState([]);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('ALL');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [dialog, setDialog] = useState(null);
+
+  // Prevent OAuth callback from being processed more than once
+  // during React StrictMode development behavior.
+  const signInHandled = useRef(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await getIncidents();
+      setItems(result.incidents || []);
+    } catch (e) {
+      setError(e.message);
+      setItems(import.meta.env.VITE_API_URL ? [] : demo);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (signInHandled.current) return;
+
+    signInHandled.current = true;
+
+    completeSignIn()
+      .then((s) => {
+        if (s) setSession(s);
+      })
+      .catch((e) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
+    if (session || !isAuthConfigured()) {
+      load();
+    } else {
+      setLoading(false);
+    }
+  }, [session, load]);
+
+  const filtered = useMemo(
+    () =>
+      items.filter(
+        (i) =>
+          (status === 'ALL' || i.status === status) &&
+          `${i.incidentId} ${i.resourceId} ${i.severity} ${i.metric}`
+            .toLowerCase()
+            .includes(query.toLowerCase())
+      ),
+    [items, query, status]
+  );
+
+  const decide = async (reason) => {
+    try {
+      if (!import.meta.env.VITE_API_URL) {
+        setItems((old) =>
+          old.map((i) =>
+            i.incidentId === dialog.incident.incidentId
+              ? {
+                  ...i,
+                  status:
+                    dialog.type === 'approve' ? 'APPROVED' : 'REJECTED',
+                  rejectionReason: reason,
+                  approvedBy: 'demo-operator'
+                }
+              : i
+          )
+        );
+      } else if (dialog.type === 'approve') {
+        await approveIncident(dialog.incident.incidentId);
+      } else {
+        await rejectIncident(dialog.incident.incidentId, reason);
+      }
+
+      setDialog(null);
+
+      if (import.meta.env.VITE_API_URL) {
+        await load();
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  if (isAuthConfigured() && !session) {
+    return (
+      <main className="auth">
+        <p className="eyebrow">SELF-HEALING INFRASTRUCTURE</p>
+
+        <h1>Human approval, before automatic action.</h1>
+
+        <p>
+          Sign in as an authorized operator to review incidents and approve
+          remediation.
+        </p>
+
+        {error && <p className="error">{error}</p>}
+
+        <button
+          className="primary"
+          onClick={() => signIn().catch((e) => setError(e.message))}
+        >
+          Sign in with Cognito
+        </button>
+      </main>
+    );
+  }
+
+  return (
+    <div className="shell">
+      <header>
+        <div>
+          <b>SELF-HEALING</b>
+          <small>INFRASTRUCTURE CONTROL</small>
+        </div>
+
+        <div>
+          {session ? (
+            <>
+              <span>{session.email}</span>
+              <button onClick={signOut}>Sign out</button>
+            </>
+          ) : (
+            <span>Demo mode</span>
+          )}
+        </div>
+      </header>
+
+      <main>
+        <section className="hero">
+          <div>
+            <p className="eyebrow">INCIDENT OPERATIONS</p>
+
+            <h1>Review, understand, then authorize.</h1>
+
+            <p>
+              Every remediation is human-approved and every rejected decision
+              improves future diagnosis.
+            </p>
+          </div>
+
+          <button onClick={load}>Refresh</button>
+        </section>
+
+        {!import.meta.env.VITE_API_URL && (
+          <p className="notice">
+            Demo data is shown. Configure the API and Cognito values before
+            deployment.
+          </p>
+        )}
+
+        {error && <p className="error">{error}</p>}
+
+        <section className="toolbar">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search incidents"
+          />
+
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
+            <option value="ALL">All statuses</option>
+            <option value="AWAITING_APPROVAL">Awaiting approval</option>
+            <option value="APPROVED">Approved</option>
+            <option value="REJECTED">Rejected</option>
+            <option value="FIXED">Fixed</option>
+          </select>
+        </section>
+
+        <h2>
+          {filtered.length} incident{filtered.length === 1 ? '' : 's'}
+        </h2>
+
+        {loading ? (
+          <p>Loading incidents...</p>
+        ) : (
+          <div className="list">
+            {filtered.map((i) => (
+              <IncidentCard
+                key={i.incidentId}
+                incident={i}
+                onDecision={(incident, type) =>
+                  setDialog({ incident, type })
+                }
+              />
+            ))}
+          </div>
+        )}
+
+        <ChatPanel
+          enabled={Boolean(import.meta.env.VITE_API_URL && session)}
+          onAsk={askQuestion}
+        />
+      </main>
+
+      {dialog && (
+        <DecisionDialog
+          {...dialog}
+          onClose={() => setDialog(null)}
+          onConfirm={decide}
+        />
+      )}
+    </div>
+  );
 }
+
