@@ -1,3 +1,4 @@
+
 import "dotenv/config";
 import OpenAI from "openai";
 
@@ -146,18 +147,99 @@ DISABLE_FUNCTION
 
 NEVER invent another fix action.
 
+IMPORTANT:
+
+The "parameters" object MUST match the selected fix action.
+
 For a Lambda incident:
 
-ROLLBACK_VERSION:
-Use when a recent deployment/version is the likely cause.
+1. ROLLBACK_VERSION
 
-INCREASE_MEMORY:
-Use when the function is experiencing resource/CPU pressure and increasing memory is an appropriate mitigation.
+Use this when a recent deployment/version is the likely cause.
 
-DISABLE_FUNCTION:
-Use when disabling the function is the safest available mitigation.
+The parameters MUST contain:
 
-If the evidence is insufficient for a specific fix, choose the safest applicable action from the allowed list.
+{
+  "targetVersion": "number",
+  "reason": "short reason"
+}
+
+"targetVersion" MUST be a numeric Lambda version.
+
+DO NOT use "$LATEST_STABLE".
+DO NOT use a string placeholder.
+DO NOT omit targetVersion.
+
+Example:
+
+"fix": {
+  "action": "ROLLBACK_VERSION",
+  "parameters": {
+    "targetVersion": 6,
+    "reason": "Rollback to the previous stable Lambda version"
+  }
+}
+
+2. INCREASE_MEMORY
+
+Use this when the Lambda is experiencing memory/resource pressure.
+
+The parameters MUST contain:
+
+{
+  "targetMemoryMb": 256,
+  "reason": "short reason"
+}
+
+"targetMemoryMb" MUST:
+
+- be an integer
+- be between 128 and 10240
+- represent the new Lambda memory size in MB
+- normally be greater than the current memory size
+
+For a memory-pressure incident where the current Lambda memory is 128 MB,
+use 256 MB as the target memory unless the incident provides evidence that
+another value is more appropriate.
+
+Example:
+
+"fix": {
+  "action": "INCREASE_MEMORY",
+  "parameters": {
+    "targetMemoryMb": 256,
+    "reason": "Increase memory to reduce memory pressure"
+  }
+}
+
+DO NOT use targetVersion for INCREASE_MEMORY.
+
+3. DISABLE_FUNCTION
+
+Use this only when disabling the Lambda is the safest available mitigation.
+
+The parameters MUST contain:
+
+{
+  "reservedConcurrency": 0,
+  "reason": "short reason"
+}
+
+"reservedConcurrency" MUST be the integer 0.
+
+Example:
+
+"fix": {
+  "action": "DISABLE_FUNCTION",
+  "parameters": {
+    "reservedConcurrency": 0,
+    "reason": "Disable the function to prevent further failures"
+  }
+}
+
+If evidence is insufficient for a specific fix, choose the safest
+applicable action from the allowed list, but the parameters MUST still
+match that action exactly.
 
 Keep all text concise.
 
@@ -182,8 +264,8 @@ Return exactly this structure:
   "fix": {
     "action": "INCREASE_MEMORY",
     "parameters": {
-      "targetVersion": "$LATEST_STABLE",
-      "reason": "short reason for selected fix"
+      "targetMemoryMb": 256,
+      "reason": "Increase memory to reduce memory pressure"
     }
   }
 }
@@ -211,7 +293,7 @@ The JSON MUST be complete and valid.
                     content: prompt
                 }
             ],
-            max_tokens: 800,
+            max_tokens: 80000,
             temperature: 0
         });
     } catch (error) {
@@ -262,7 +344,8 @@ The JSON MUST be complete and valid.
         );
     } catch (error) {
         console.error(
-            "Malformed JSON returned by Bedrock"
+            "Malformed JSON returned by Bedrock:",
+            responseText
         );
 
         throw new Error(
@@ -355,7 +438,7 @@ The JSON MUST be complete and valid.
     }
 
     // --------------------------------------------------
-    // 13. STRICTLY validate fix action
+    // 13. Strictly validate fix action
     // --------------------------------------------------
 
     if (
@@ -381,6 +464,10 @@ The JSON MUST be complete and valid.
         );
     }
 
+    // --------------------------------------------------
+    // 15. Validate common fix reason
+    // --------------------------------------------------
+
     if (
         !diagnosis.fix.parameters.reason ||
         typeof diagnosis.fix.parameters.reason !== "string"
@@ -391,73 +478,130 @@ The JSON MUST be complete and valid.
     }
 
     // --------------------------------------------------
-    // 15. Construct final output
+    // 16. Action-specific parameter validation
+    // --------------------------------------------------
+
+    if (
+        diagnosis.fix.action ===
+        FIX_ACTIONS.INCREASE_MEMORY
+    ) {
+        const targetMemoryMb =
+            diagnosis.fix.parameters.targetMemoryMb;
+
+        if (
+            typeof targetMemoryMb !== "number" ||
+            !Number.isInteger(targetMemoryMb) ||
+            targetMemoryMb < 128 ||
+            targetMemoryMb > 10240
+        ) {
+            throw new Error(
+                `Invalid targetMemoryMb: ${targetMemoryMb}. Must be an integer between 128 and 10240.`
+            );
+        }
+    }
+
+    if (
+        diagnosis.fix.action ===
+        FIX_ACTIONS.ROLLBACK_VERSION
+    ) {
+        const targetVersion =
+            diagnosis.fix.parameters.targetVersion;
+
+        if (
+            typeof targetVersion !== "number" ||
+            !Number.isInteger(targetVersion) ||
+            targetVersion < 1
+        ) {
+            throw new Error(
+                `Invalid targetVersion: ${targetVersion}. Must be a positive integer.`
+            );
+        }
+    }
+
+    if (
+        diagnosis.fix.action ===
+        FIX_ACTIONS.DISABLE_FUNCTION
+    ) {
+        const reservedConcurrency =
+            diagnosis.fix.parameters.reservedConcurrency;
+
+        if (
+            reservedConcurrency !== 0
+        ) {
+            throw new Error(
+                `Invalid reservedConcurrency: ${reservedConcurrency}. Must be 0 for DISABLE_FUNCTION.`
+            );
+        }
+    }
+
+    // --------------------------------------------------
+    // 17. Construct final output
     // --------------------------------------------------
 
     return {
-    // Trusted fields from incoming event
-    incidentId: event.incidentId,
+        // Trusted fields from incoming event
+        incidentId: event.incidentId,
 
-    resourceType,
+        resourceType,
 
-    resourceArn,
+        resourceArn,
 
-    metric: event.metric,
+        metric: event.metric,
 
-    value: event.value,
+        value: event.value,
 
-    threshold: event.threshold,
+        threshold: event.threshold,
 
-    eventTime: event.eventTime,
+        eventTime: event.eventTime,
 
-    alarmName: event.alarmName,
+        alarmName: event.alarmName,
 
-    alarmState: event.alarmState,
+        alarmState: event.alarmState,
 
-    alarmReason: event.alarmReason,
+        alarmReason: event.alarmReason,
 
-    source: event.source,
+        source: event.source,
 
-    account: event.account,
+        account: event.account,
 
-    region: event.region,
+        region: event.region,
 
-    // AI diagnosis
-    rootCause: diagnosis.rootCause,
+        // AI diagnosis
+        rootCause: diagnosis.rootCause,
 
-    severity: diagnosis.severity,
+        severity: diagnosis.severity,
 
-    reason: diagnosis.reason,
+        reason: diagnosis.reason,
 
-    confidence: diagnosis.confidence,
+        confidence: diagnosis.confidence,
 
-    confidenceReason:
-        diagnosis.confidenceReason,
+        confidenceReason:
+            diagnosis.confidenceReason,
 
-    blastRadius:
-        diagnosis.blastRadius,
+        blastRadius:
+            diagnosis.blastRadius,
 
-    blastRadiusReason:
-        diagnosis.blastRadiusReason,
+        blastRadiusReason:
+            diagnosis.blastRadiusReason,
 
-    estimatedCostImpact:
-        diagnosis.estimatedCostImpact,
+        estimatedCostImpact:
+            diagnosis.estimatedCostImpact,
 
-    // Strictly validated fix
-    fix: {
-        action: diagnosis.fix.action,
+        // Strictly validated fix
+        fix: {
+            action: diagnosis.fix.action,
 
-        parameters: {
-            ...diagnosis.fix.parameters
+            parameters: {
+                ...diagnosis.fix.parameters
+            }
+        },
+
+        // Approval is NOT generated by the LLM.
+        // It should be populated by the approval workflow.
+        approval: {
+            approved: false,
+            approvedBy: null,
+            approvedAt: null
         }
-    },
-
-    // Approval is NOT generated by the LLM.
-    // It should be populated by the approval workflow.
-    approval: {
-        approved: false,
-        approvedBy: null,
-        approvedAt: null
-    }
-};
+    };
 };

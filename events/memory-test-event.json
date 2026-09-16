@@ -1,0 +1,14 @@
+{
+  "id": "test-memory-event",
+  "source": "aws.cloudwatch",
+  "account": "691588646018",
+  "region": "ap-south-1",
+  "time": "2026-09-16T17:00:00Z",
+  "detail": {
+    "alarmName": "MemoryTestLambda-Alarm",
+    "state": {
+      "value": "ALARM",
+      "reason": "Memory test"
+    }
+  }
+}
