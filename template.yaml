@@ -31,8 +31,16 @@ Resources:
       Timeout: 10
       AutoPublishAlias: live
 
-
-
+  DisableTestLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/kushal/disable-test-lambda/
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 10
 
   MemoryTestLambda:
     Type: AWS::Serverless::Function
@@ -44,8 +52,6 @@ Resources:
         - x86_64
       MemorySize: 128
       Timeout: 30
-
-
 
 
   # ============================================================
@@ -86,6 +92,24 @@ Resources:
         - x86_64
       Timeout: 30
 
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:GetFunctionConfiguration
+              Resource: "*"
+
+            - Effect: Allow
+              Action:
+                - dynamodb:DescribeTable
+                - dynamodb:DescribeContinuousBackups
+              Resource: "*"
+
+            - Effect: Allow
+              Action:
+                - ec2:DescribeInstances
+              Resource: "*"
+
 
   # ============================================================
   # 4. FIX - JYOTISH
@@ -105,7 +129,9 @@ Resources:
         - Version: "2012-10-17"
           Statement:
 
-            # --- Lambda fix actions ---
+            # ----------------------------------------------------
+            # Lambda fix actions
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - lambda:GetAlias
@@ -117,15 +143,17 @@ Resources:
                 - lambda:GetFunctionConfiguration
               Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*"
 
-
-            # --- EC2 read-only ---
+            # ----------------------------------------------------
+            # EC2 read-only
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - ec2:DescribeInstances
               Resource: "*"
 
-
-            # --- EC2 reboot / stop / start / resize ---
+            # ----------------------------------------------------
+            # EC2 remediation
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - ec2:RebootInstances
@@ -133,12 +161,10 @@ Resources:
                 - ec2:StartInstances
                 - ec2:ModifyInstanceAttribute
               Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
-              Condition:
-                StringEquals:
-                  "aws:ResourceTag/SelfHealing:Managed": "true"
 
-
-            # --- EC2 rollback AMI: launch replacement ---
+            # ----------------------------------------------------
+            # EC2 rollback AMI: launch replacement
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - ec2:RunInstances
@@ -149,8 +175,9 @@ Resources:
                 - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
                 - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/*"
 
-
-            # --- EC2 rollback AMI: subnet / security group ---
+            # ----------------------------------------------------
+            # EC2 rollback AMI: subnet / security group
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - ec2:RunInstances
@@ -161,15 +188,17 @@ Resources:
                 StringEquals:
                   "ec2:Vpc": "*"
 
-
-            # --- EC2 replacement: tag after launch ---
+            # ----------------------------------------------------
+            # EC2 replacement: tag after launch
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - ec2:CreateTags
               Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
 
-
-            # --- EC2: pass instance role ---
+            # ----------------------------------------------------
+            # EC2: pass instance role
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - iam:PassRole
@@ -178,8 +207,9 @@ Resources:
                 StringEquals:
                   "iam:PassedToService": "ec2.amazonaws.com"
 
-
-            # --- DynamoDB fix actions ---
+            # ----------------------------------------------------
+            # DynamoDB fix actions
+            # ----------------------------------------------------
             - Effect: Allow
               Action:
                 - dynamodb:DescribeTable
@@ -189,9 +219,6 @@ Resources:
                 - dynamodb:RestoreTableToPointInTime
                 - dynamodb:DeleteItem
               Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*"
-              Condition:
-                StringEquals:
-                  "aws:ResourceTag/SelfHealing:Managed": "true"
 
 
   # ============================================================
@@ -227,13 +254,11 @@ Resources:
         - Version: "2012-10-17"
           Statement:
 
-            # Approval Handler → DynamoDB
             - Effect: Allow
               Action:
                 - dynamodb:UpdateItem
               Resource: !GetAtt IncidentsTable.Arn
 
-            # Approval Handler → Step Functions
             - Effect: Allow
               Action:
                 - states:SendTaskSuccess
@@ -263,6 +288,10 @@ Resources:
   # ============================================================
   # 8. EVENTBRIDGE
   # ============================================================
+
+  # ------------------------------------------------------------
+  # Existing CloudWatch Alarm → Step Functions trigger
+  # ------------------------------------------------------------
 
   SelfHealingTrigger:
     Type: AWS::Events::Rule
@@ -300,6 +329,44 @@ Resources:
           RoleArn: arn:aws:iam::691588646018:role/service-role/Amazon_EventBridge_Invoke_Step_Functions_1487815626
 
 
+  # ------------------------------------------------------------
+  # EC2 State Change → Step Functions trigger
+  # ------------------------------------------------------------
+
+  SelfHealingEC2StateChange:
+    Type: AWS::Events::Rule
+
+    Properties:
+      Name: SelfHealingEC2StateChange
+
+      Description: >
+        Detects EC2 instance running and stopped state changes
+        for the self-healing workflow
+
+      EventBusName: default
+
+      State: ENABLED
+
+      EventPattern:
+        source:
+          - aws.ec2
+
+        detail-type:
+          - EC2 Instance State-change Notification
+
+        detail:
+          state:
+            - running
+            - stopped
+
+      Targets:
+        - Id: SelfHealingOrchestratorEC2
+
+          Arn: arn:aws:states:ap-south-1:691588646018:stateMachine:Self-Healing-Orchestrator
+
+          RoleArn: arn:aws:iam::691588646018:role/service-role/Amazon_EventBridge_Invoke_Step_Functions_1487815626
+
+
   # ============================================================
   # 9. STEP FUNCTIONS ORCHESTRATOR
   # ============================================================
@@ -314,33 +381,25 @@ Resources:
 
       DefinitionSubstitutions:
 
-        # Step Functions → Diagnose Lambda
         DiagnoseFunctionArn: !GetAtt DiagnoseWithBedrockFunction.Arn
 
-        # Step Functions → Actual faulty Lambda
         FaultyLambdaArn: !GetAtt SelfHealingFaultyLambda.Arn
 
-        # Step Functions → Human Approval Lambda
         ApprovalFunctionArn: !GetAtt ApprovalFunction.Arn
 
-        # Step Functions → Apply Fix Lambda
         ApplyFixFunctionArn: !GetAtt ApplyFixFunction.Arn
 
       Policies:
 
-        # Step Functions → Diagnose Lambda
         - LambdaInvokePolicy:
             FunctionName: !Ref DiagnoseWithBedrockFunction
 
-        # Step Functions → Approval Lambda
         - LambdaInvokePolicy:
             FunctionName: !Ref ApprovalFunction
 
-        # Step Functions → Apply Fix Lambda
         - LambdaInvokePolicy:
             FunctionName: !Ref ApplyFixFunction
 
-        # Step Functions → DynamoDB
         - Statement:
             - Effect: Allow
               Action:
@@ -348,7 +407,6 @@ Resources:
                 - dynamodb:UpdateItem
               Resource: !GetAtt IncidentsTable.Arn
 
-        # Step Functions → CloudWatch
         - Statement:
             - Effect: Allow
               Action:
@@ -441,7 +499,6 @@ Resources:
         - Version: "2012-10-17"
           Statement:
 
-            # Approval API → DynamoDB
             - Effect: Allow
               Action:
                 - dynamodb:GetItem
@@ -449,7 +506,6 @@ Resources:
                 - dynamodb:UpdateItem
               Resource: !GetAtt IncidentsTable.Arn
 
-            # Approval API → Step Functions
             - Effect: Allow
               Action:
                 - states:SendTaskSuccess
@@ -481,7 +537,6 @@ Resources:
           - OPTIONS
 
       DefinitionBody:
-
         openapi: 3.0.1
 
         info:

@@ -1,23 +1,36 @@
 
 {
   "Comment": "Self-Healing Infrastructure Orchestrator",
-  "StartAt": "Prepare Incident",
+  "StartAt": "Determine Event Type",
   "States": {
+    "Determine Event Type": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.source",
+          "StringEquals": "aws.cloudwatch",
+          "Next": "Prepare Incident"
+        },
+        {
+          "Variable": "$.source",
+          "StringEquals": "aws.ec2",
+          "Next": "Prepare EC2 State Incident"
+        }
+      ],
+      "Default": "Unsupported Event Type"
+    },
+
     "Prepare Incident": {
       "Type": "Pass",
       "Parameters": {
         "incidentId.$": "$.id",
-        "resourceType": "Lambda",
         "alarmName.$": "$.detail.alarmName",
         "alarmState.$": "$.detail.state.value",
         "alarmReason.$": "$.detail.state.reason",
         "source.$": "$.source",
         "account.$": "$.account",
         "region.$": "$.region",
-        "eventTime.$": "$.time",
-        "metric": "Errors",
-        "value": 1,
-        "threshold": 0
+        "eventTime.$": "$.time"
       },
       "Next": "Describe Alarm"
     },
@@ -29,30 +42,204 @@
         "AlarmNames.$": "States.Array($.alarmName)"
       },
       "ResultSelector": {
-        "resourceArn.$": "States.Format('arn:aws:lambda:{}:{}:function:{}', $$.Execution.Input.region, $$.Execution.Input.account, $.MetricAlarms[0].Dimensions[0].Value)"
-           },
+        "namespace.$": "$.MetricAlarms[0].Namespace",
+        "metricName.$": "$.MetricAlarms[0].MetricName",
+        "threshold.$": "$.MetricAlarms[0].Threshold",
+        "statistic.$": "$.MetricAlarms[0].Statistic",
+        "period.$": "$.MetricAlarms[0].Period",
+        "evaluationPeriods.$": "$.MetricAlarms[0].EvaluationPeriods",
+        "dimensions.$": "$.MetricAlarms[0].Dimensions"
+      },
       "ResultPath": "$.alarmDetails",
-      "Next": "Set Resource ARN"
+      "Next": "Set Alarm Details"
     },
 
-    "Set Resource ARN": {
+    "Set Alarm Details": {
       "Type": "Pass",
       "Parameters": {
         "incidentId.$": "$.incidentId",
-        "resourceType.$": "$.resourceType",
         "alarmName.$": "$.alarmName",
         "alarmState.$": "$.alarmState",
         "alarmReason.$": "$.alarmReason",
-        "resourceArn.$": "$.alarmDetails.resourceArn",
         "source.$": "$.source",
         "account.$": "$.account",
         "region.$": "$.region",
         "eventTime.$": "$.eventTime",
+
+        "resourceType.$": "$.alarmDetails.namespace",
+        "metric.$": "$.alarmDetails.metricName",
+        "threshold.$": "$.alarmDetails.threshold",
+        "statistic.$": "$.alarmDetails.statistic",
+        "period.$": "$.alarmDetails.period",
+        "evaluationPeriods.$": "$.alarmDetails.evaluationPeriods",
+        "dimensions.$": "$.alarmDetails.dimensions"
+      },
+      "Next": "Determine Resource Type"
+    },
+
+    "Determine Resource Type": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.resourceType",
+          "StringEquals": "AWS/Lambda",
+          "Next": "Set Lambda Resource"
+        },
+        {
+          "Variable": "$.resourceType",
+          "StringEquals": "AWS/DynamoDB",
+          "Next": "Set DynamoDB Resource"
+        },
+        {
+          "Variable": "$.resourceType",
+          "StringEquals": "AWS/EC2",
+          "Next": "Set EC2 Resource"
+        }
+      ],
+      "Default": "Unsupported Resource Type"
+    },
+
+    "Set Lambda Resource": {
+      "Type": "Pass",
+      "Parameters": {
+        "incidentId.$": "$.incidentId",
+        "resourceType": "Lambda",
+        "alarmName.$": "$.alarmName",
+        "alarmState.$": "$.alarmState",
+        "alarmReason.$": "$.alarmReason",
+
+        "resourceName.$": "$.dimensions[0].Value",
+
+        "resourceArn.$": "States.Format('arn:aws:lambda:{}:{}:function:{}', $.region, $.account, $.dimensions[0].Value)",
+
+        "source.$": "$.source",
+        "account.$": "$.account",
+        "region.$": "$.region",
+        "eventTime.$": "$.eventTime",
+
         "metric.$": "$.metric",
-        "value.$": "$.value",
-        "threshold.$": "$.threshold"
+        "value": 1,
+        "threshold.$": "$.threshold",
+
+        "statistic.$": "$.statistic",
+        "period.$": "$.period",
+        "evaluationPeriods.$": "$.evaluationPeriods",
+        "dimensions.$": "$.dimensions"
       },
       "Next": "Lambda Invoke"
+    },
+
+    "Set DynamoDB Resource": {
+      "Type": "Pass",
+      "Parameters": {
+        "incidentId.$": "$.incidentId",
+        "resourceType": "DynamoDB",
+        "alarmName.$": "$.alarmName",
+        "alarmState.$": "$.alarmState",
+        "alarmReason.$": "$.alarmReason",
+
+        "resourceName.$": "$.dimensions[0].Value",
+
+        "resourceArn.$": "States.Format('arn:aws:dynamodb:{}:{}:table/{}', $.region, $.account, $.dimensions[0].Value)",
+
+        "source.$": "$.source",
+        "account.$": "$.account",
+        "region.$": "$.region",
+        "eventTime.$": "$.eventTime",
+
+        "metric.$": "$.metric",
+        "value": 1,
+        "threshold.$": "$.threshold",
+
+        "statistic.$": "$.statistic",
+        "period.$": "$.period",
+        "evaluationPeriods.$": "$.evaluationPeriods",
+        "dimensions.$": "$.dimensions"
+      },
+      "Next": "Lambda Invoke"
+    },
+
+    "Set EC2 Resource": {
+      "Type": "Pass",
+      "Parameters": {
+        "incidentId.$": "$.incidentId",
+        "resourceType": "EC2",
+        "alarmName.$": "$.alarmName",
+        "alarmState.$": "$.alarmState",
+        "alarmReason.$": "$.alarmReason",
+
+        "resourceName.$": "$.dimensions[0].Value",
+
+        "resourceArn.$": "States.Format('arn:aws:ec2:{}:{}:instance/{}', $.region, $.account, $.dimensions[0].Value)",
+
+        "source.$": "$.source",
+        "account.$": "$.account",
+        "region.$": "$.region",
+        "eventTime.$": "$.eventTime",
+
+        "metric.$": "$.metric",
+        "value": 1,
+        "threshold.$": "$.threshold",
+
+        "statistic.$": "$.statistic",
+        "period.$": "$.period",
+        "evaluationPeriods.$": "$.evaluationPeriods",
+        "dimensions.$": "$.dimensions"
+      },
+      "Next": "Lambda Invoke"
+    },
+
+    "Prepare EC2 State Incident": {
+      "Type": "Pass",
+      "Parameters": {
+        "incidentId.$": "$.id",
+        "resourceType": "EC2",
+
+        "resourceName.$": "$['detail']['instance-id']",
+
+        "resourceArn.$": "States.Format('arn:aws:ec2:{}:{}:instance/{}', $.region, $.account, $['detail']['instance-id'])",
+
+        "source.$": "$.source",
+        "account.$": "$.account",
+        "region.$": "$.region",
+        "eventTime.$": "$.time",
+
+        "ec2State.$": "$['detail']['state']",
+
+        "eventType": "EC2_STATE_CHANGE",
+
+        "metric": "InstanceState",
+        "value": 1,
+        "threshold": 1,
+
+        "statistic": "StateChange",
+        "period": 0,
+        "evaluationPeriods": 1,
+
+        "alarmName": "EC2-State-Change",
+        "alarmState": "ALARM",
+        "alarmReason": "EC2 instance state changed",
+
+        "dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value.$": "$['detail']['instance-id']"
+          }
+        ]
+      },
+      "Next": "Lambda Invoke"
+    },
+
+    "Unsupported Event Type": {
+      "Type": "Fail",
+      "Error": "UnsupportedEventType",
+      "Cause": "The event source is not supported."
+    },
+
+    "Unsupported Resource Type": {
+      "Type": "Fail",
+      "Error": "UnsupportedResourceType",
+      "Cause": "The CloudWatch alarm namespace is not supported."
     },
 
     "Lambda Invoke": {
@@ -272,3 +459,4 @@
   },
   "QueryLanguage": "JSONPath"
 }
+

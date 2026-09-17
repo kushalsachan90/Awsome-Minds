@@ -1,5 +1,6 @@
 import { handleLambdaFix } from "./lambdaFix.js";
-
+import { handleDynamoDbFix } from "./dynamodbFix.js";
+import { handleEc2Fix } from "./ec2Fix.js";
 export const handler = async (event) => {
 
     console.log(
@@ -7,7 +8,6 @@ export const handler = async (event) => {
         JSON.stringify(event)
     );
 
-    // 1. Human approval
     if (!event.approval?.approved) {
         return {
             success: false,
@@ -18,7 +18,6 @@ export const handler = async (event) => {
         };
     }
 
-    // 2. Extract fix
     const { action, parameters } = event.fix || {};
     const { resourceType } = event;
 
@@ -30,17 +29,16 @@ export const handler = async (event) => {
         throw new Error("Missing resource type");
     }
 
-    // 3. Dispatch
     switch (resourceType) {
 
         case "Lambda":
             return await handleLambdaFix(event);
 
         case "EC2":
-            return await handleEC2Fix(event);
+            return await handleEc2Fix(event);
 
         case "DynamoDB":
-            return await handleDynamoDBFix(event);
+            return await handleDynamoDbFix(event);
 
         default:
             throw new Error(
