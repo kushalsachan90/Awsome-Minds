@@ -10,8 +10,8 @@ Amplify.configure({
           domain:
             "self-healing-691588646018.auth.ap-south-1.amazoncognito.com",
           scopes: ["openid", "email", "profile"],
-          redirectSignIn: ["http://localhost:5173/"],
-          redirectSignOut: ["http://localhost:5173/"],
+redirectSignIn: ["https://main.dnm026v1cdxmp.amplifyapp.com/"],
+redirectSignOut: ["https://main.dnm026v1cdxmp.amplifyapp.com/"],
           responseType: "code",
         },
       },
